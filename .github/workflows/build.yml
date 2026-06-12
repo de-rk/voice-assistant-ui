@@ -1,4 +1,4 @@
-name: Build
+name: Build macOS
 
 on:
   push:
@@ -31,11 +31,21 @@ jobs:
         run: npm ci --legacy-peer-deps
 
       - name: Build
+        env:
+          # Ad-hoc signing — no Apple Developer certificate required
+          APPLE_SIGNING_IDENTITY: "-"
         run: npm run tauri build
 
-      - name: Upload app bundle
+      - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: voice-assistant-macos
+          name: VoiceAssistant-macOS-dmg
           path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: ignore
+
+      - name: Upload app bundle (zipped)
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceAssistant-macOS-app
+          path: src-tauri/target/release/bundle/macos/*.app
           if-no-files-found: ignore
