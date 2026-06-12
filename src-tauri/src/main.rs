@@ -48,7 +48,7 @@ impl Default for AppConfig {
             },
             tts: TtsConfig {
                 api_key:  String::new(),
-                voice_id: "ad703a88".to_string(),
+                voice_id: String::new(),
             },
         }
     }
