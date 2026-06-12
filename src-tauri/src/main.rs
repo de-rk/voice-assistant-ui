@@ -460,10 +460,10 @@ async fn chat(text: String, state: State<'_, AppState>) -> Result<String, String
         }
         break (s, b);
     };
-    info!("[ai] body: {}", &body[..body.len().min(200)]);
+    info!("[ai] body: {}", body.chars().take(200).collect::<String>());
 
     let data: serde_json::Value = serde_json::from_str(&body)
-        .map_err(|e| format!("JSON parse error: {} — body: {}", e, &body[..body.len().min(300)]))?;
+        .map_err(|e| format!("JSON parse error: {} — body: {}", e, body.chars().take(300).collect::<String>()))?;
 
     let choices = data["choices"].as_array().ok_or("no choices")?;
     let msg = &choices[0]["message"];
@@ -550,7 +550,7 @@ async fn speak(text: String, app: AppHandle) -> Result<(), String> {
 
     if !http_status.is_success() {
         let body = resp.text().await.unwrap_or_default();
-        info!("[tts] Noiz failed — falling back to say. body: {}", &body[..body.len().min(300)]);
+        info!("[tts] Noiz failed — falling back to say. body: {}", body.chars().take(300).collect::<String>());
         Command::new("say").args(["-v", "Tingting", "-r", "180", &text]).output().ok();
     } else {
         let audio_bytes = resp.bytes().await.map_err(|e| format!("read audio error: {}", e))?;
