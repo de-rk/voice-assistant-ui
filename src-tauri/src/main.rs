@@ -442,7 +442,15 @@ async fn chat(text: String, state: State<'_, AppState>) -> Result<String, String
             .body(body_str.clone())
             .send()
             .await
-            .map_err(|e| format!("HTTP error: {}", e))?;
+            .map_err(|e| {
+                let mut msg = format!("HTTP error: {}", e);
+                let mut src: &dyn std::error::Error = &e;
+                while let Some(next) = src.source() {
+                    msg.push_str(&format!(" → {}", next));
+                    src = next;
+                }
+                msg
+            })?;
         let s = resp.status();
         let b = resp.text().await.map_err(|e| format!("read body error: {}", e))?;
         info!("[ai] HTTP {} (attempt {})", s, attempts);
