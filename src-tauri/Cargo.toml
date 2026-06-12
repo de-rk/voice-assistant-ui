@@ -21,9 +21,9 @@ reqwest = { version = "0.12", features = ["json", "multipart"] }
 log = "0.4"
 env_logger = "0.11"
 parking_lot = "0.12"
-regex = "1"
 cpal = "0.15"
-hound = "3"
+tokio = { version = "1", features = ["rt"] }
+whisper-rs = { version = "0.14", features = ["metal"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2"

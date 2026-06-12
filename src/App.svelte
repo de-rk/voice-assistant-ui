@@ -57,10 +57,11 @@
     const unlisten = await listen<string>('status-changed', (e) => {
       status = e.payload as typeof status;
       statusText = {
-        idle:       '就绪',
-        recording:  '录音中...',
-        processing: '处理中...',
-        speaking:   '播报中...',
+        idle:               '就绪',
+        recording:          '录音中...',
+        processing:         '处理中...',
+        speaking:           '播报中...',
+        'downloading-model':'模型下载中...',
       }[status] ?? status;
     });
 

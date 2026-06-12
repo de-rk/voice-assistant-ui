@@ -1,5 +1,5 @@
 // VoiceAssistant — macOS MenuBar App
-// Pipeline: cpal PCM → whisper STT → LM Studio/OpenAI → Noiz TTS
+// Pipeline: cpal PCM → whisper-rs STT → LM Studio/OpenAI → Noiz TTS
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -10,9 +10,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::thread;
 use tauri::{AppHandle, Emitter, Manager, State};
+use whisper_rs::{WhisperContext, WhisperContextParameters, FullParams, SamplingStrategy};
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -61,7 +62,6 @@ fn load_config(path: &PathBuf) -> AppConfig {
             }
         }
     }
-    // First run — write defaults so the user can find and edit the file
     let default = AppConfig::default();
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
@@ -70,6 +70,63 @@ fn load_config(path: &PathBuf) -> AppConfig {
         let _ = fs::write(path, json);
     }
     default
+}
+
+// ─── Whisper Model ────────────────────────────────────────────────────────────
+
+static WHISPER_CTX: OnceLock<WhisperContext> = OnceLock::new();
+
+const MODEL_URL: &str =
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin";
+
+async fn ensure_model(model_path: &PathBuf, app: &AppHandle) -> Result<(), String> {
+    if model_path.exists() {
+        return Ok(());
+    }
+
+    info!("[whisper] downloading model to {:?}", model_path);
+    let _ = app.emit("status-changed", "downloading-model");
+
+    if let Some(parent) = model_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let bytes = client
+        .get(MODEL_URL)
+        .send()
+        .await
+        .map_err(|e| format!("model download failed: {}", e))?
+        .bytes()
+        .await
+        .map_err(|e| format!("model read failed: {}", e))?;
+
+    fs::write(model_path, &bytes).map_err(|e| format!("model write failed: {}", e))?;
+    info!("[whisper] model downloaded ({} bytes)", bytes.len());
+    Ok(())
+}
+
+// Resample mono f32 PCM from src_rate to 16000 Hz (linear interpolation)
+fn resample_to_16k(samples: &[f32], src_rate: u32) -> Vec<f32> {
+    if src_rate == 16000 {
+        return samples.to_vec();
+    }
+    let ratio = src_rate as f64 / 16000.0;
+    let out_len = (samples.len() as f64 / ratio) as usize;
+    let mut out = Vec::with_capacity(out_len);
+    for i in 0..out_len {
+        let pos = i as f64 * ratio;
+        let idx = pos as usize;
+        let frac = pos - idx as f64;
+        let a = samples.get(idx).copied().unwrap_or(0.0);
+        let b = samples.get(idx + 1).copied().unwrap_or(a);
+        out.push((a + (b - a) * frac as f32) as f32);
+    }
+    out
 }
 
 // ─── macOS Microphone Permission ──────────────────────────────────────────────
@@ -98,7 +155,7 @@ fn ensure_mic_permission() {
     info!("[mic] auth status: {}", status);
 
     match status {
-        3 => return, // already authorized
+        3 => return,
         2 => {
             info!("[mic] permission denied — user must enable in System Settings > Privacy > Microphone");
             return;
@@ -146,6 +203,7 @@ pub struct AppState {
     pub sample_rate:  Arc<Mutex<u32>>,
     pub config:       Mutex<AppConfig>,
     pub config_path:  Mutex<PathBuf>,
+    pub model_path:   PathBuf,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -153,33 +211,6 @@ pub struct ChatMessage {
     pub role:      String,
     pub content:   String,
     pub timestamp: i64,
-}
-
-// ─── WAV helper ───────────────────────────────────────────────────────────────
-
-fn write_wav(path: &str, pcm: &[u8], sample_rate: u32, channels: u16) -> std::io::Result<()> {
-    use std::io::Write;
-    let bps: u16 = 16;
-    let byte_rate = sample_rate * (channels as u32) * (bps as u32) / 8;
-    let block_align = channels * bps / 8;
-    let data_size = pcm.len() as u32;
-    let file_size = data_size.saturating_add(36);
-    let mut f = fs::File::create(path)?;
-    f.write_all(b"RIFF")?;
-    f.write_all(&file_size.to_le_bytes())?;
-    f.write_all(b"WAVE")?;
-    f.write_all(b"fmt ")?;
-    f.write_all(&16u32.to_le_bytes())?;
-    f.write_all(&1u16.to_le_bytes())?;
-    f.write_all(&channels.to_le_bytes())?;
-    f.write_all(&sample_rate.to_le_bytes())?;
-    f.write_all(&byte_rate.to_le_bytes())?;
-    f.write_all(&block_align.to_le_bytes())?;
-    f.write_all(&bps.to_le_bytes())?;
-    f.write_all(b"data")?;
-    f.write_all(&data_size.to_le_bytes())?;
-    f.write_all(pcm)?;
-    Ok(())
 }
 
 // ─── Config Commands ──────────────────────────────────────────────────────────
@@ -215,6 +246,7 @@ async fn start_recording(state: State<'_, AppState>, app: AppHandle) -> Result<b
     if mic_auth_status() != 3 {
         return Err("麦克风权限未授权，请在系统设置 → 隐私与安全性 → 麦克风中允许本应用".to_string());
     }
+
     {
         let mut rec = state.recording.lock();
         if *rec { return Ok(true); }
@@ -308,7 +340,7 @@ async fn stop_recording(state: State<'_, AppState>, app: AppHandle) -> Result<St
 }
 
 #[tauri::command]
-async fn transcribe(state: State<'_, AppState>) -> Result<String, String> {
+async fn transcribe(state: State<'_, AppState>, app: AppHandle) -> Result<String, String> {
     let chunks = state.audio_chunks.lock().clone();
     if chunks.is_empty() {
         return Err("no audio data".to_string());
@@ -318,51 +350,59 @@ async fn transcribe(state: State<'_, AppState>) -> Result<String, String> {
         let r = *state.sample_rate.lock();
         if r == 0 { 44100 } else { r }
     };
-
-    let wav_path = format!("/tmp/va_{}.wav", std::process::id());
-    write_wav(&wav_path, &chunks, sr, 1)
-        .map_err(|e| format!("WAV write failed: {}", e))?;
     state.audio_chunks.lock().clear();
 
-    let script_path = format!("/tmp/va_whisper_{}.py", std::process::id());
-    let script = format!(r#"
-import sys, whisper, re, io
+    // i16 bytes → f32 samples
+    let samples: Vec<f32> = chunks
+        .chunks_exact(2)
+        .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32767.0)
+        .collect();
 
-old_stdout = sys.stdout
-sys.stdout = io.StringIO()
+    // Resample to 16kHz
+    let samples_16k = resample_to_16k(&samples, sr);
 
-m = whisper.load_model('small')
-r = m.transcribe({:?}, fp16=False, verbose=False)
+    // Download model on first use
+    let model_path = state.model_path.clone();
+    ensure_model(&model_path, &app).await?;
 
-sys.stdout = old_stdout
+    let model_path_str = model_path
+        .to_str()
+        .ok_or("invalid model path")?
+        .to_string();
 
-text = r.get('text', '')
-text = re.sub(r'(?im)^detected language[^\n]*\n?', '', text).strip()
-sys.stdout.write(text)
-sys.stdout.flush()
-"#, &wav_path);
-    fs::write(&script_path, &script).map_err(|e| format!("script write failed: {}", e))?;
+    let text = tokio::task::spawn_blocking(move || -> Result<String, String> {
+        let ctx = WHISPER_CTX.get_or_init(|| {
+            info!("[whisper] loading model from {}", model_path_str);
+            WhisperContext::new_with_params(
+                &model_path_str,
+                WhisperContextParameters::default(),
+            )
+            .expect("failed to load whisper model")
+        });
 
-    let out = Command::new("/Library/Frameworks/Python.framework/Versions/3.10/bin/python3")
-        .env("PYTHONHTTPSVERIFY", "0")
-        .env("SSL_CERT_FILE", "/etc/ssl/cert.pem")
-        .env("PATH", "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
-        .arg(&script_path)
-        .output()
-        .map_err(|e| format!("whisper exec failed: {}", e))?;
+        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+        params.set_language(Some("auto"));
+        params.set_n_threads(4);
+        params.set_print_special(false);
+        params.set_print_progress(false);
+        params.set_print_realtime(false);
+        params.set_print_timestamps(false);
 
-    let _ = fs::remove_file(&wav_path);
-    let _ = fs::remove_file(&script_path);
+        let mut state = ctx.create_state().map_err(|e| format!("whisper state: {}", e))?;
+        state.full(params, &samples_16k).map_err(|e| format!("whisper full: {}", e))?;
 
-    let log_path = "/tmp/va_whisper.log";
-    let _ = fs::write(log_path, &out.stderr);
+        let n = state.full_n_segments().map_err(|e| format!("whisper segments: {}", e))?;
+        let mut text = String::new();
+        for i in 0..n {
+            if let Ok(seg) = state.full_get_segment_text(i) {
+                text.push_str(&seg);
+            }
+        }
+        Ok(text.trim().to_string())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking error: {}", e))??;
 
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        return Err(format!("whisper failed ({}): {}", out.status, &stderr[stderr.len().saturating_sub(500)..]));
-    }
-
-    let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
     info!("[stt] -> {:?}", text);
     Ok(text)
 }
@@ -377,7 +417,7 @@ async fn chat(text: String, state: State<'_, AppState>) -> Result<String, String
             cfg.llm.api_key.clone(),
         )
     };
-    info!("[ai] provider base_url={}", base_url);
+    info!("[ai] base_url={}", base_url);
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(120))
@@ -391,9 +431,8 @@ async fn chat(text: String, state: State<'_, AppState>) -> Result<String, String
         "stream":     false
     }).to_string();
 
-    // Retry once — LM Studio can return 502 while model is warming up
     let mut attempts = 0;
-    let (status, body) = loop {
+    let (_status, body) = loop {
         attempts += 1;
         let resp = client
             .post(format!("{base_url}/chat/completions"))
@@ -469,7 +508,6 @@ async fn speak(text: String, app: AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    // Fall back to system TTS when no API key is configured
     if api_key.is_empty() {
         info!("[tts] no api_key, using say");
         Command::new("say").args(["-v", "Tingting", "-r", "180", &text]).output().ok();
@@ -500,12 +538,7 @@ async fn speak(text: String, app: AppHandle) -> Result<(), String> {
         .map_err(|e| format!("Noiz TTS HTTP error: {}", e))?;
 
     let http_status = resp.status();
-    let content_type = resp.headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
-    info!("[tts] HTTP {} content-type: {}", http_status, content_type);
+    info!("[tts] HTTP {}", http_status);
 
     if !http_status.is_success() {
         let body = resp.text().await.unwrap_or_default();
@@ -520,7 +553,6 @@ async fn speak(text: String, app: AppHandle) -> Result<(), String> {
             Command::new("say").args(["-v", "Tingting", "-r", "180", &text]).output().ok();
         } else {
             fs::write(&cache_path, &audio_bytes).map_err(|e| format!("write audio error: {}", e))?;
-            info!("[tts] cached {} bytes", audio_bytes.len());
             Command::new("afplay").arg(&cache_path).output().map_err(|e| e.to_string())?;
         }
     }
@@ -558,6 +590,13 @@ fn main() {
         env_logger::Env::default().default_filter_or("info")
     ).init();
 
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let base_dir = PathBuf::from(&home).join(".voice-assistant");
+    let config_path = base_dir.join("config.json");
+    let model_path  = base_dir.join("models").join("ggml-tiny.bin");
+
+    let config = load_config(&config_path);
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(AppState {
@@ -567,20 +606,11 @@ fn main() {
             audio_chunks: Arc::new(Mutex::new(Vec::new())),
             stop_flag:    Mutex::new(None),
             sample_rate:  Arc::new(Mutex::new(0u32)),
-            config:       Mutex::new(AppConfig::default()),
-            config_path:  Mutex::new(PathBuf::new()),
+            config:       Mutex::new(config),
+            config_path:  Mutex::new(config_path),
+            model_path,
         })
         .setup(|app| {
-            // Store config in ~/.voice-assistant/config.json
-            let config_path = std::env::var("HOME")
-                .map(|h| PathBuf::from(h).join(".voice-assistant").join("config.json"))
-                .unwrap_or_else(|_| PathBuf::from("/tmp/voice-assistant-config.json"));
-            info!("[config] path: {:?}", config_path);
-
-            let config = load_config(&config_path);
-            *app.state::<AppState>().config.lock() = config;
-            *app.state::<AppState>().config_path.lock() = config_path;
-
             #[cfg(target_os = "macos")]
             {
                 ensure_mic_permission();
