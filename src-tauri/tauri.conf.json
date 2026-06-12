@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "VoiceAssistant",
+  "version": "1.0.0",
+  "identifier": "com.voiceassistant.menubar",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "VoiceAssistant",
+        "width": 440,
+        "height": 560,
+        "minWidth": 400,
+        "minHeight": 480,
+        "resizable": false,
+        "decorations": true,
+        "transparent": false,
+        "alwaysOnTop": true,
+        "visible": true,
+        "skipTaskbar": true,
+        "center": true,
+        "devtools": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "infoPlist": "Info.plist"
+    }
+  }
+}

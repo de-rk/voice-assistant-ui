@@ -1,0 +1,30 @@
+[package]
+name = "voice-assistant-ui"
+version = "1.0.0"
+description = "Voice Assistant — macOS MenuBar App"
+authors = ["drk"]
+edition = "2021"
+
+[[bin]]
+name = "voice-assistant-ui"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "multipart"] }
+log = "0.4"
+env_logger = "0.11"
+parking_lot = "0.12"
+regex = "1"
+cpal = "0.15"
+hound = "3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc = "0.2"
+block = "0.1"

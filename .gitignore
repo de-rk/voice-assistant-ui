@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+src-tauri/target/
+
+# Tauri generated schemas (auto-generated at build time)
+src-tauri/gen/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+/tmp/
+
+# Environment / secrets
+.env
+.env.*
