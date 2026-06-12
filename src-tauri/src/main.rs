@@ -420,7 +420,7 @@ async fn chat(text: String, state: State<'_, AppState>) -> Result<String, String
     info!("[ai] base_url={}", base_url);
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
+        .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| e.to_string())?;
 

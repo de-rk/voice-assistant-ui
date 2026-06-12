@@ -170,7 +170,8 @@
     } catch (err: any) {
       console.error('[app] error:', err);
       status = 'idle';
-      statusText = `错误: ${err}`;
+      statusText = '就绪';
+      addMessage('error', String(err));
     }
   }
 

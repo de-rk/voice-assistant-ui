@@ -20,7 +20,7 @@
   }
 </script>
 
-<div class="bubble-wrap {role}" class:user={role === 'user'} class:assistant={role === 'assistant'}>
+<div class="bubble-wrap {role}" class:user={role === 'user'} class:assistant={role === 'assistant'} class:error={role === 'error'}>
   <div class="bubble">
     <p>{content}</p>
     {#if role === 'assistant'}
@@ -65,6 +65,11 @@
     align-items: flex-start;
   }
 
+  .bubble-wrap.error {
+    align-self: center;
+    align-items: center;
+  }
+
   @keyframes bubble-in {
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
@@ -93,6 +98,14 @@
     border: 1px solid rgba(99, 102, 241, 0.2);
     border-bottom-left-radius: 4px;
     color: var(--text-primary);
+  }
+
+  .error .bubble {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+    font-size: 12px;
+    border-radius: 8px;
   }
 
   p {
