@@ -75,10 +75,36 @@ fn load_config(path: &PathBuf) -> AppConfig {
 // ─── macOS Microphone Permission ──────────────────────────────────────────────
 
 #[cfg(target_os = "macos")]
+fn mic_auth_status() -> i64 {
+    use objc::{class, msg_send, sel, sel_impl};
+    use objc::runtime::Object;
+    unsafe {
+        let av_cls = class!(AVCaptureDevice);
+        let ns_cls = class!(NSString);
+        let media_type: *mut Object = msg_send![ns_cls,
+            stringWithUTF8String: b"soun\0".as_ptr() as *const std::os::raw::c_char];
+        msg_send![av_cls, authorizationStatusForMediaType: media_type]
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn ensure_mic_permission() {
     use std::sync::{Arc, Condvar, Mutex};
     use objc::{class, msg_send, sel, sel_impl};
     use objc::runtime::Object;
+
+    // 0=notDetermined 1=restricted 2=denied 3=authorized
+    let status = mic_auth_status();
+    info!("[mic] auth status: {}", status);
+
+    match status {
+        3 => return, // already authorized
+        2 => {
+            info!("[mic] permission denied — user must enable in System Settings > Privacy > Microphone");
+            return;
+        }
+        _ => {}
+    }
 
     let pair = Arc::new((Mutex::new(false), Condvar::new()));
     let pair2 = pair.clone();
@@ -89,11 +115,8 @@ fn ensure_mic_permission() {
         let media_type: *mut Object = msg_send![ns_cls,
             stringWithUTF8String: b"soun\0".as_ptr() as *const std::os::raw::c_char];
 
-        // 3 = AVAuthorizationStatusAuthorized
-        let status: i64 = msg_send![av_cls, authorizationStatusForMediaType: media_type];
-        if status == 3 { return; }
-
-        let block = block::ConcreteBlock::new(move |_granted: bool| {
+        let block = block::ConcreteBlock::new(move |granted: bool| {
+            info!("[mic] permission granted: {}", granted);
             let (lock, cvar) = &*pair2;
             *lock.lock().unwrap() = true;
             cvar.notify_one();
@@ -109,7 +132,7 @@ fn ensure_mic_permission() {
             done = cvar.wait(done).unwrap();
         }
     }
-    info!("[mic] permission requested");
+    info!("[mic] permission request complete, status now: {}", mic_auth_status());
 }
 
 // ─── App State ────────────────────────────────────────────────────────────────
@@ -188,6 +211,10 @@ fn get_config_path(state: State<'_, AppState>) -> String {
 
 #[tauri::command]
 async fn start_recording(state: State<'_, AppState>, app: AppHandle) -> Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    if mic_auth_status() != 3 {
+        return Err("麦克风权限未授权，请在系统设置 → 隐私与安全性 → 麦克风中允许本应用".to_string());
+    }
     {
         let mut rec = state.recording.lock();
         if *rec { return Ok(true); }
