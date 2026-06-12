@@ -77,7 +77,7 @@ fn load_config(path: &PathBuf) -> AppConfig {
 static WHISPER_CTX: OnceLock<WhisperContext> = OnceLock::new();
 
 const MODEL_URL: &str =
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin";
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin";
 
 async fn ensure_model(model_path: &PathBuf, app: &AppHandle) -> Result<(), String> {
     if model_path.exists() {
@@ -593,7 +593,7 @@ fn main() {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let base_dir = PathBuf::from(&home).join(".voice-assistant");
     let config_path = base_dir.join("config.json");
-    let model_path  = base_dir.join("models").join("ggml-tiny.bin");
+    let model_path  = base_dir.join("models").join("ggml-small.bin");
 
     let config = load_config(&config_path);
 
