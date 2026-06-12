@@ -305,12 +305,17 @@ old_stdout = sys.stdout
 sys.stdout = io.StringIO()
 
 m = whisper.load_model('small')
-r = m.transcribe({:?}, fp16=False, verbose=False, initial_prompt='以下是中英日混合对话。')
+prompt = '以下是中英日混合对话。'
+r = m.transcribe({:?}, fp16=False, verbose=False, initial_prompt=prompt)
 
 sys.stdout = old_stdout
 
 text = r.get('text', '')
+# Strip "Detected language: ..." lines whisper sometimes injects
 text = re.sub(r'(?im)^detected language[^\n]*\n?', '', text).strip()
+# Strip initial_prompt if whisper leaked it into the output
+if text.startswith(prompt):
+    text = text[len(prompt):].strip()
 sys.stdout.write(text)
 sys.stdout.flush()
 "#, &wav_path);
