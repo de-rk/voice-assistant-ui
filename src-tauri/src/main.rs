@@ -349,7 +349,11 @@ sys.stdout.flush()
 async fn chat(text: String, state: State<'_, AppState>) -> Result<String, String> {
     let (base_url, model, api_key) = {
         let cfg = state.config.lock();
-        (cfg.llm.base_url.clone(), cfg.llm.model.clone(), cfg.llm.api_key.clone())
+        (
+            cfg.llm.base_url.trim_end_matches('/').to_string(),
+            cfg.llm.model.clone(),
+            cfg.llm.api_key.clone(),
+        )
     };
     info!("[ai] provider base_url={}", base_url);
 

@@ -101,12 +101,15 @@
   function onProviderChange() {
     if (!draft) return;
     const p = draft.llm.provider;
-    if (p !== 'custom') {
+    if (p === 'local' || p === 'openai') {
       draft.llm.base_url = PROVIDER_URLS[p];
-      if (!draft.llm.model || draft.llm.model === PROVIDER_MODELS[p === 'local' ? 'openai' : 'local']) {
+      // Only overwrite model if it's still a known default from another provider
+      const otherDefaults = Object.values(PROVIDER_MODELS).filter(m => m !== PROVIDER_MODELS[p]);
+      if (!draft.llm.model || otherDefaults.includes(draft.llm.model)) {
         draft.llm.model = PROVIDER_MODELS[p];
       }
     }
+    // custom: leave base_url and model as-is for manual editing
   }
 
   async function saveSettings() {
