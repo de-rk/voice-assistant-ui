@@ -47,13 +47,12 @@
   let config: AppConfig | null = null;
   let showSettings = false;
   let draft: AppConfig | null = null;
-  let configPath = '';
+
   let saveError = '';
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
   onMount(async () => {
     config = await invoke<AppConfig>('get_config');
-    configPath = await invoke<string>('get_config_path');
 
     const unlisten = await listen<string>('status-changed', (e) => {
       status = e.payload as typeof status;
@@ -286,10 +285,6 @@
           <input type="text" bind:value={draft.tts.voice_id} placeholder="ad703a88" />
         </label>
 
-        {#if configPath}
-          <p class="config-path">配置文件：{configPath}</p>
-        {/if}
-
         {#if saveError}
           <p class="save-error">{saveError}</p>
         {/if}
@@ -515,14 +510,6 @@
   }
 
   .field select option { background: #15152a; }
-
-  .config-path {
-    font-size: 10px;
-    color: var(--text-secondary);
-    opacity: 0.5;
-    word-break: break-all;
-    margin-top: 4px;
-  }
 
   .save-error {
     font-size: 11px;

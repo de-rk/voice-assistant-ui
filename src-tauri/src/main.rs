@@ -540,10 +540,10 @@ fn main() {
             config_path:  Mutex::new(PathBuf::new()),
         })
         .setup(|app| {
-            // Resolve config path and load from disk
-            let config_dir = app.path().app_config_dir()
-                .unwrap_or_else(|_| PathBuf::from("/tmp"));
-            let config_path = config_dir.join("config.json");
+            // Store config in ~/.voice-assistant/config.json
+            let config_path = std::env::var("HOME")
+                .map(|h| PathBuf::from(h).join(".voice-assistant").join("config.json"))
+                .unwrap_or_else(|_| PathBuf::from("/tmp/voice-assistant-config.json"));
             info!("[config] path: {:?}", config_path);
 
             let config = load_config(&config_path);
