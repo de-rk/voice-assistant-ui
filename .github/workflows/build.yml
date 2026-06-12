@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-14
 
     steps:
       - uses: actions/checkout@v4
@@ -35,8 +35,8 @@ jobs:
 
       - name: Build
         env:
-          # Ad-hoc signing — no Apple Developer certificate required
           APPLE_SIGNING_IDENTITY: "-"
+          RUST_BACKTRACE: "1"
         run: npm run tauri build
 
       - name: Upload DMG
