@@ -30,6 +30,7 @@ html, body {
   user-select: none;
   -webkit-user-select: none;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 ::-webkit-scrollbar {
