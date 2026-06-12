@@ -413,7 +413,8 @@ async fn speak(text: String, app: AppHandle) -> Result<(), String> {
     let _ = app.emit("status-changed", "speaking");
 
     let (api_key, voice_id) = {
-        let cfg = app.state::<AppState>().config.lock();
+        let state = app.state::<AppState>();
+        let cfg = state.config.lock();
         (cfg.tts.api_key.clone(), cfg.tts.voice_id.clone())
     };
 
