@@ -12,6 +12,11 @@ unexpected_cfgs = { level = "allow", check-cfg = ['cfg(cargo_clippy)'] }
 name = "voice-assistant-ui"
 path = "src/main.rs"
 
+[lib]
+name = "voice_assistant_ui"
+crate-type = ["staticlib", "cdylib"]
+path = "src/lib.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
