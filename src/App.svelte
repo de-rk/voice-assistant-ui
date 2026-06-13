@@ -49,6 +49,9 @@
   let draft: AppConfig | null = null;
 
   let saveError = '';
+  let prevProvider = '';
+  let customDraftUrl = '';
+  let customDraftModel = '';
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
   onMount(async () => {
@@ -90,6 +93,9 @@
   // ── Settings ──────────────────────────────────────────────────────────────
   function openSettings() {
     draft = JSON.parse(JSON.stringify(config));
+    prevProvider = draft!.llm.provider;
+    customDraftUrl = draft!.llm.provider === 'custom' ? draft!.llm.base_url : '';
+    customDraftModel = draft!.llm.provider === 'custom' ? draft!.llm.model : '';
     saveError = '';
     showSettings = true;
   }
@@ -102,15 +108,23 @@
   function onProviderChange() {
     if (!draft) return;
     const p = draft.llm.provider;
+    // Save custom values before leaving custom provider
+    if (prevProvider === 'custom') {
+      customDraftUrl = draft.llm.base_url;
+      customDraftModel = draft.llm.model;
+    }
     if (p === 'local' || p === 'openai') {
       draft.llm.base_url = PROVIDER_URLS[p];
-      // Only overwrite model if it's still a known default from another provider
       const otherDefaults = Object.values(PROVIDER_MODELS).filter(m => m !== PROVIDER_MODELS[p]);
       if (!draft.llm.model || otherDefaults.includes(draft.llm.model)) {
         draft.llm.model = PROVIDER_MODELS[p];
       }
+    } else if (p === 'custom') {
+      // Restore previously entered custom values
+      draft.llm.base_url = customDraftUrl;
+      draft.llm.model = customDraftModel;
     }
-    // custom: leave base_url and model as-is for manual editing
+    prevProvider = p;
   }
 
   async function saveSettings() {

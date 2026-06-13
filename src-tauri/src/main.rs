@@ -623,7 +623,6 @@ fn main() {
             {
                 ensure_mic_permission();
                 if let Some(win) = app.get_webview_window("main") {
-                    let _ = win.set_always_on_top(true);
                     let _ = win.set_skip_taskbar(true);
                     let _ = win.show();
                 }
