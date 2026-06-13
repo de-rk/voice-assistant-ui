@@ -485,6 +485,22 @@ async fn chat(text: String, state: State<'_, AppState>) -> Result<String, String
     Ok(reply)
 }
 
+fn play_audio_file(path: &str) {
+    #[cfg(target_os = "macos")]
+    { let _ = Command::new("afplay").arg(path).output(); }
+    #[cfg(not(any(target_os = "macos", target_os = "android")))]
+    { info!("[tts] audio playback not supported on this platform: {}", path); }
+    #[cfg(target_os = "android")]
+    { info!("[tts] audio playback not supported on android yet: {}", path); }
+}
+
+fn say_fallback(text: &str) {
+    #[cfg(target_os = "macos")]
+    { Command::new("say").args(["-v", "Tingting", "-r", "180", text]).output().ok(); }
+    #[cfg(not(target_os = "macos"))]
+    { info!("[tts] say fallback not available on this platform, skipping: {}", text); }
+}
+
 #[tauri::command]
 async fn speak(text: String, app: AppHandle) -> Result<(), String> {
     *app.state::<AppState>().status.lock() = "speaking".to_string();
@@ -510,7 +526,7 @@ async fn speak(text: String, app: AppHandle) -> Result<(), String> {
 
     if fs::metadata(&cache_path).map(|m| m.len() > 44).unwrap_or(false) {
         info!("[tts] cache hit: {}", cache_path);
-        let _ = Command::new("afplay").arg(&cache_path).output();
+        play_audio_file(&cache_path);
         *app.state::<AppState>().status.lock() = "idle".to_string();
         let _ = app.emit("status-changed", "idle");
         return Ok(());
@@ -518,7 +534,7 @@ async fn speak(text: String, app: AppHandle) -> Result<(), String> {
 
     if api_key.is_empty() {
         info!("[tts] no api_key, using say");
-        Command::new("say").args(["-v", "Tingting", "-r", "180", &text]).output().ok();
+        say_fallback(&text);
         *app.state::<AppState>().status.lock() = "idle".to_string();
         let _ = app.emit("status-changed", "idle");
         return Ok(());
@@ -551,17 +567,17 @@ async fn speak(text: String, app: AppHandle) -> Result<(), String> {
     if !http_status.is_success() {
         let body = resp.text().await.unwrap_or_default();
         info!("[tts] Noiz failed — falling back to say. body: {}", body.chars().take(300).collect::<String>());
-        Command::new("say").args(["-v", "Tingting", "-r", "180", &text]).output().ok();
+        say_fallback(&text);
     } else {
         let audio_bytes = resp.bytes().await.map_err(|e| format!("read audio error: {}", e))?;
         info!("[tts] received {} bytes", audio_bytes.len());
 
         if audio_bytes.len() < 44 || !audio_bytes.starts_with(b"RIFF") {
             info!("[tts] not valid WAV — falling back to say");
-            Command::new("say").args(["-v", "Tingting", "-r", "180", &text]).output().ok();
+            say_fallback(&text);
         } else {
             fs::write(&cache_path, &audio_bytes).map_err(|e| format!("write audio error: {}", e))?;
-            Command::new("afplay").arg(&cache_path).output().map_err(|e| e.to_string())?;
+            play_audio_file(&cache_path);
         }
     }
 

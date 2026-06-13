@@ -1,4 +1,4 @@
-name: Build macOS
+name: Build
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  build-macos:
     runs-on: macos-14
 
     steps:
@@ -51,4 +51,58 @@ jobs:
         with:
           name: VoiceAssistant-macOS-app
           path: src-tauri/target/release/bundle/macos/*.app
+          if-no-files-found: ignore
+
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
+
+      - name: Install Android NDK and cmake
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "ndk;26.3.11579264" \
+            "cmake;3.22.1"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.3.11579264" >> $GITHUB_ENV
+          echo "NDK_HOME=$ANDROID_HOME/ndk/26.3.11579264"         >> $GITHUB_ENV
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Init Tauri Android project
+        run: npm run tauri android init
+
+      - name: Build Android APK (debug, arm64)
+        env:
+          RUST_BACKTRACE: "1"
+        run: npm run tauri android build -- --debug --target aarch64
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceAssistant-Android-arm64-debug
+          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: ignore
