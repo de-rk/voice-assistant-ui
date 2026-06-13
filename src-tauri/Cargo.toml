@@ -5,6 +5,9 @@ description = "Voice Assistant — macOS MenuBar App"
 authors = ["drk"]
 edition = "2021"
 
+[lints.rust]
+unexpected_cfgs = { level = "allow", check-cfg = ['cfg(cargo_clippy)'] }
+
 [[bin]]
 name = "voice-assistant-ui"
 path = "src/main.rs"
