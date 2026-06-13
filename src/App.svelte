@@ -127,6 +127,19 @@
     prevProvider = p;
   }
 
+  let clearStatus = '';
+
+  async function clearData() {
+    if (!confirm('删除已下载的语音模型和 TTS 缓存？\n下次使用时模型将重新下载。')) return;
+    try {
+      await invoke('clear_data');
+      clearStatus = '已清理';
+      setTimeout(() => { clearStatus = ''; }, 3000);
+    } catch (e: any) {
+      clearStatus = '清理失败: ' + String(e);
+    }
+  }
+
   async function saveSettings() {
     if (!draft) return;
     saveError = '';
@@ -307,9 +320,14 @@
         {#if saveError}
           <p class="save-error">{saveError}</p>
         {/if}
+        {#if clearStatus}
+          <p class="clear-status">{clearStatus}</p>
+        {/if}
       </div>
 
       <div class="modal-footer">
+        <button class="btn-clear" on:click={clearData} title="删除已下载的语音模型和 TTS 缓存文件">清理数据</button>
+        <div style="flex:1"></div>
         <button class="btn-cancel" on:click={closeSettings}>取消</button>
         <button class="btn-save" on:click={saveSettings}>保存</button>
       </div>
@@ -564,4 +582,22 @@
     color: #fff;
   }
   .btn-save:hover { opacity: 0.85; }
+  .btn-clear {
+    background: transparent;
+    color: var(--error, #e05c5c);
+    border: 1px solid var(--error, #e05c5c);
+    font-size: 12px;
+    font-family: inherit;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: opacity 0.15s;
+  }
+  .btn-clear:hover { opacity: 0.7; }
+  .clear-status {
+    font-size: 11px;
+    color: var(--success, #4caf7d);
+    margin-top: 4px;
+  }
 </style>

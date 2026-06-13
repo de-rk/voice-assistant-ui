@@ -204,6 +204,7 @@ pub struct AppState {
     pub config:       Mutex<AppConfig>,
     pub config_path:  Mutex<PathBuf>,
     pub model_path:   PathBuf,
+    pub cache_dir:    PathBuf,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -512,8 +513,8 @@ async fn speak(text: String, app: AppHandle) -> Result<(), String> {
         (cfg.tts.api_key.clone(), cfg.tts.voice_id.clone())
     };
 
-    let cache_dir = "/tmp/va_tts_cache";
-    let _ = fs::create_dir_all(cache_dir);
+    let cache_dir = app.state::<AppState>().cache_dir.clone();
+    let _ = fs::create_dir_all(&cache_dir);
     let cache_key = {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
@@ -522,7 +523,8 @@ async fn speak(text: String, app: AppHandle) -> Result<(), String> {
         text.hash(&mut h);
         format!("{:016x}", h.finish())
     };
-    let cache_path = format!("{}/{}.wav", cache_dir, cache_key);
+    let cache_path = cache_dir.join(format!("{}.wav", cache_key));
+    let cache_path = cache_path.to_string_lossy().to_string();
 
     if fs::metadata(&cache_path).map(|m| m.len() > 44).unwrap_or(false) {
         info!("[tts] cache hit: {}", cache_path);
@@ -588,6 +590,20 @@ async fn speak(text: String, app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn clear_data(state: State<'_, AppState>) -> Result<(), String> {
+    if state.model_path.exists() {
+        if let Some(parent) = state.model_path.parent() {
+            fs::remove_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+    }
+    if state.cache_dir.exists() {
+        fs::remove_dir_all(&state.cache_dir).map_err(|e| e.to_string())?;
+    }
+    info!("[data] cleared model and cache");
+    Ok(())
+}
+
+#[tauri::command]
 fn get_status(state: State<'_, AppState>) -> String {
     state.status.lock().clone()
 }
@@ -614,27 +630,33 @@ fn main() {
         env_logger::Env::default().default_filter_or("info")
     ).init();
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let base_dir = PathBuf::from(&home).join(".voice-assistant");
-    let config_path = base_dir.join("config.json");
-    let model_path  = base_dir.join("models").join("ggml-small.bin");
-
-    let config = load_config(&config_path);
-
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .manage(AppState {
-            recording:    Mutex::new(false),
-            status:       Mutex::new("idle".to_string()),
-            messages:     Mutex::new(Vec::new()),
-            audio_chunks: Arc::new(Mutex::new(Vec::new())),
-            stop_flag:    Mutex::new(None),
-            sample_rate:  Arc::new(Mutex::new(0u32)),
-            config:       Mutex::new(config),
-            config_path:  Mutex::new(config_path),
-            model_path,
-        })
         .setup(|app| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            let fallback_data = PathBuf::from(&home).join(".voice-assistant");
+            let fallback_cache = PathBuf::from("/tmp/va_tts_cache");
+
+            let data_dir = app.path().app_data_dir().unwrap_or(fallback_data);
+            let cache_dir = app.path().app_cache_dir().unwrap_or(fallback_cache);
+            let config_path = data_dir.join("config.json");
+            let model_path  = data_dir.join("models").join("ggml-small.bin");
+
+            let config = load_config(&config_path);
+
+            app.manage(AppState {
+                recording:    Mutex::new(false),
+                status:       Mutex::new("idle".to_string()),
+                messages:     Mutex::new(Vec::new()),
+                audio_chunks: Arc::new(Mutex::new(Vec::new())),
+                stop_flag:    Mutex::new(None),
+                sample_rate:  Arc::new(Mutex::new(0u32)),
+                config:       Mutex::new(config),
+                config_path:  Mutex::new(config_path),
+                model_path,
+                cache_dir,
+            });
+
             #[cfg(target_os = "macos")]
             {
                 ensure_mic_permission();
@@ -659,6 +681,7 @@ fn main() {
             get_config,
             save_config,
             get_config_path,
+            clear_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
