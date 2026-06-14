@@ -18,6 +18,8 @@
   interface TtsConfig {
     api_key: string;
     voice_id: string;
+    speed: number;
+    emo: string;
   }
 
   interface AppConfig {
@@ -317,6 +319,21 @@
           <input type="text" bind:value={draft.tts.voice_id} placeholder="ad703a88" />
         </label>
 
+        <label class="field">
+          <span>语速 (0.5 – 2.0)</span>
+          <div class="speed-row">
+            <input type="range" min="0.5" max="2.0" step="0.05"
+              bind:value={draft.tts.speed} class="speed-slider" />
+            <span class="speed-val">{draft.tts.speed.toFixed(2)}x</span>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>情感 (JSON，留空则不传)</span>
+          <input type="text" bind:value={draft.tts.emo}
+            placeholder='{"Joy":0.8,"Excitement":0.2}' />
+        </label>
+
         {#if saveError}
           <p class="save-error">{saveError}</p>
         {/if}
@@ -599,5 +616,22 @@
     font-size: 11px;
     color: var(--success, #4caf7d);
     margin-top: 4px;
+  }
+
+  .speed-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .speed-slider {
+    flex: 1;
+    accent-color: var(--primary);
+    cursor: pointer;
+  }
+  .speed-val {
+    font-size: 11px;
+    color: var(--text-primary);
+    min-width: 36px;
+    text-align: right;
   }
 </style>

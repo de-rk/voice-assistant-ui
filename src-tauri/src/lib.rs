@@ -28,6 +28,8 @@ pub struct LlmConfig {
 pub struct TtsConfig {
     pub api_key:  String,
     pub voice_id: String,
+    pub speed:    f32,
+    pub emo:      String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -48,6 +50,8 @@ impl Default for AppConfig {
             tts: TtsConfig {
                 api_key:  String::new(),
                 voice_id: String::new(),
+                speed:    1.0,
+                emo:      String::new(),
             },
         }
     }
@@ -535,10 +539,10 @@ async fn speak(text: String, app: AppHandle) -> Result<(), String> {
     *app.state::<AppState>().status.lock() = "speaking".to_string();
     let _ = app.emit("status-changed", "speaking");
 
-    let (api_key, voice_id) = {
+    let (api_key, voice_id, speed, emo) = {
         let state = app.state::<AppState>();
         let cfg = state.config.lock();
-        (cfg.tts.api_key.clone(), cfg.tts.voice_id.clone())
+        (cfg.tts.api_key.clone(), cfg.tts.voice_id.clone(), cfg.tts.speed, cfg.tts.emo.clone())
     };
 
     let cache_dir = app.state::<AppState>().cache_dir.clone();
@@ -549,6 +553,8 @@ async fn speak(text: String, app: AppHandle) -> Result<(), String> {
         let mut h = DefaultHasher::new();
         voice_id.hash(&mut h);
         text.hash(&mut h);
+        speed.to_bits().hash(&mut h);
+        emo.hash(&mut h);
         format!("{:016x}", h.finish())
     };
     let cache_path = cache_dir.join(format!("{}.wav", cache_key));
@@ -576,12 +582,15 @@ async fn speak(text: String, app: AppHandle) -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let form = reqwest::multipart::Form::new()
+    let mut form = reqwest::multipart::Form::new()
         .text("text", text.clone())
         .text("voice_id", voice_id)
         .text("output_format", "wav")
-        .text("speed", "1")
+        .text("speed", speed.to_string())
         .text("trim_silence", "true");
+    if !emo.is_empty() {
+        form = form.text("emo", emo);
+    }
 
     let resp = client
         .post("https://noiz.ai/v1/text-to-speech")
