@@ -331,7 +331,7 @@
         <label class="field">
           <span>情感 (JSON，留空则不传)</span>
           <input type="text" bind:value={draft.tts.emo}
-            placeholder='{"Joy":0.8,"Excitement":0.2}' />
+            placeholder='&#123;"Joy":0.8,"Excitement":0.2&#125;' />
         </label>
 
         {#if saveError}
